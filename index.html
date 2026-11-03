@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#090D0B">
+<meta name="color-scheme" content="dark">
+<title>My Life Manager</title>
+</head>
+<body>
+<div class="shell" id="shell">
+  <aside class="side" id="side" aria-label="Sidebar"></aside>
+  <div class="col">
+    <header class="top" id="top"></header>
+    <main id="view" tabindex="-1" aria-live="polite"></main>
+  </div>
+</div>
+<nav class="bnav" id="bnav" aria-label="Main"></nav>
+<div id="modalRoot"></div><div id="modal2"></div><div id="toastRoot" aria-live="polite"></div><div id="lock" hidden></div>
+
+<div id="busy" hidden role="status" aria-live="polite"><div class="spin"></div><p></p></div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

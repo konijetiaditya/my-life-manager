@@ -1,0 +1,9 @@
+/* Additions for the real app: file viewer, busy overlay, onboarding. */
+.viewer{display:flex;flex-direction:column;gap:10px;max-height:62vh;overflow:auto;background:var(--surf);border-radius:14px;padding:10px}
+.viewer img,.viewer canvas{max-width:100%;height:auto;border-radius:8px;background:#fff}
+#busy{position:fixed;inset:0;z-index:300;background:rgba(9,13,11,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--tx)}
+#busy[hidden]{display:none}
+.spin{width:38px;height:38px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--pri);animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:2.4s}}
+.lockbox .mf{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}

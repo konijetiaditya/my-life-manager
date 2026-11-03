@@ -1,0 +1,112 @@
+{
+  "ranAt": "2026-11-02T08:30:08.555Z",
+  "pass": 21,
+  "fail": 0,
+  "results": [
+    {
+      "name": "onboarding: weak/mismatched PINs rejected, strong PIN accepted",
+      "ok": true,
+      "ms": 3214
+    },
+    {
+      "name": "lock: reload shows lock screen with no data in the page; wrong PIN rejected; right PIN restores data",
+      "ok": true,
+      "ms": 2654
+    },
+    {
+      "name": "lockout: 3 wrong PINs cause a wait that survives a reload and blocks the right PIN",
+      "ok": true,
+      "ms": 5307
+    },
+    {
+      "name": "storage: no readable data in IndexedDB/localStorage; files are encrypted",
+      "ok": true,
+      "ms": 3815
+    },
+    {
+      "name": "tamper: a modified vault is detected, not opened",
+      "ok": true,
+      "ms": 2621
+    },
+    {
+      "name": "upload validation: bad names, fake PDFs, wrong types, oversize are refused",
+      "ok": true,
+      "ms": 4955
+    },
+    {
+      "name": "attachments: PDF and PNG are stored encrypted and open in the viewer",
+      "ok": true,
+      "ms": 4789
+    },
+    {
+      "name": "XSS: script payloads in every text field are shown as text and never run",
+      "ok": true,
+      "ms": 7686
+    },
+    {
+      "name": "CSP: eval, inline script and outside network requests are blocked",
+      "ok": true,
+      "ms": 1894
+    },
+    {
+      "name": "re-authentication: policy number stays hidden until the PIN is confirmed",
+      "ok": true,
+      "ms": 3188
+    },
+    {
+      "name": "auto-lock: leaving the app (immediately setting) and inactivity both lock and wipe the screen",
+      "ok": true,
+      "ms": 2078
+    },
+    {
+      "name": "auto-lock: inactivity timer",
+      "ok": true,
+      "ms": 5527
+    },
+    {
+      "name": "change PIN: old PIN stops working, new PIN works",
+      "ok": true,
+      "ms": 5381
+    },
+    {
+      "name": "backup: encrypted round trip incl. files; wrong password, tampering and junk files refused",
+      "ok": true,
+      "ms": 25434
+    },
+    {
+      "name": "calculations: totals shown match the figures entered",
+      "ok": true,
+      "ms": 2948
+    },
+    {
+      "name": "notifications (stubbed OS): scheduled only when allowed; generic text by default; detailed when chosen; capped; no past dates",
+      "ok": true,
+      "ms": 6842
+    },
+    {
+      "name": "notifications: denied permission schedules nothing",
+      "ok": true,
+      "ms": 3188
+    },
+    {
+      "name": "fingerprint (stubbed OS prompt): unlocks only when the prompt succeeds",
+      "ok": true,
+      "ms": 2171
+    },
+    {
+      "name": "fingerprint: refused prompt keeps the app locked",
+      "ok": true,
+      "ms": 3471
+    },
+    {
+      "name": "forgot PIN: erasing needs typed confirmation and removes everything",
+      "ok": true,
+      "ms": 1759
+    },
+    {
+      "name": "forms: validation errors, saving, editing and deleting a record",
+      "ok": true,
+      "ms": 4156
+    }
+  ]
+}
