@@ -1,0 +1,34 @@
+name: Build Android APK
+# Free for personal use on GitHub. Run it from the "Actions" tab -> "Build Android APK" -> "Run workflow".
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm audit --omit=dev
+      - run: node scripts/copy-pdfjs.mjs
+      - run: npm run sync
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+      - name: Show checksum
+        run: sha256sum android/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: my-life-manager-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
