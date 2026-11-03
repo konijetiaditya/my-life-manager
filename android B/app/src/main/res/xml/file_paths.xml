@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Only the app's own cache folder can be handed to the share sheet (used for encrypted backups). -->
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <cache-path name="my_cache_images" path="." />
-</paths>
