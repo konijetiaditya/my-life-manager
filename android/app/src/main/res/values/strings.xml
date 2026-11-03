@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">My Life Manager</string>
+    <string name="title_activity_main">My Life Manager</string>
+    <string name="package_name">app.mylifemanager.personal</string>
+    <string name="custom_url_scheme">app.mylifemanager.personal</string>
+</resources>
