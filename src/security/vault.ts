@@ -19,6 +19,8 @@ export const FILE_ID_PATTERN = /^[0-9a-f]{32}$/;
 
 interface Meta {
   v: 1;
+  /** 'open' = no PIN: the key is wrapped by the device secret only. */
+  mode?: 'open';
   pinSalt: string;
   kekSalt: string;
   kdf: ArgonParams;
@@ -92,6 +94,52 @@ export class Vault {
     return kek;
   }
 
+  async isOpenMode(): Promise<boolean> {
+    return (await this.meta())?.mode === 'open';
+  }
+
+  /** First-time setup WITHOUT a PIN: the data key is wrapped only by a device secret. Data is still encrypted at rest. */
+  async createOpen(): Promise<void> {
+    if (await this.exists()) throw new Error('A vault already exists');
+    const device = randomBytes(32);
+    const kekSalt = randomBytes(16);
+    await this.secrets.set(DEVICE_KEY, toB64(device));
+    try {
+      const raw = await hkdf(device, kekSalt, 'mlm/kek/open/v1');
+      const kek = await kekFromRaw(raw);
+      raw.fill(0);
+      const dekRaw = randomBytes(32);
+      const extractable = await aesKeyFromRaw(dekRaw, ['encrypt', 'decrypt'], true);
+      dekRaw.fill(0);
+      const wrapped = await wrapDek(kek, extractable, AAD_DEK);
+      const meta: Meta = { v: 1, mode: 'open', pinSalt: '', kekSalt: toB64(kekSalt), kdf: this.kdf, wrappedDek: toB64(wrapped), createdAt: Date.now() };
+      await idbPut('meta', META_KEY, meta);
+      this.dek = await unwrapDek(kek, wrapped, AAD_DEK, false);
+    } catch (e) {
+      await this.secrets.remove(DEVICE_KEY);
+      throw e;
+    } finally {
+      device.fill(0);
+    }
+  }
+
+  async unlockOpen(): Promise<UnlockResult> {
+    const meta = await this.meta();
+    if (!meta || meta.mode !== 'open') return { ok: false, reason: 'damaged' };
+    const deviceB64 = await this.secrets.get(DEVICE_KEY);
+    if (!deviceB64) return { ok: false, reason: 'damaged' };
+    try {
+      const raw = await hkdf(fromB64(deviceB64), fromB64(meta.kekSalt), 'mlm/kek/open/v1');
+      const kek = await kekFromRaw(raw);
+      raw.fill(0);
+      this.dek = await unwrapDek(kek, fromB64(meta.wrappedDek), AAD_DEK, false);
+      return { ok: true };
+    } catch (e) {
+      if (e instanceof CryptoError) return { ok: false, reason: 'damaged' };
+      throw e;
+    }
+  }
+
   /** First-time setup: create all keys and protect them with the chosen PIN. */
   async create(pin: string): Promise<void> {
     if (!PIN_PATTERN.test(pin)) throw new Error('PIN must be exactly 4 digits');
@@ -122,6 +170,7 @@ export class Vault {
   private async tryPin(pin: string, extractable: boolean): Promise<{ key: CryptoKey } | { fail: UnlockResult }> {
     const meta = await this.meta();
     if (!meta) return { fail: { ok: false, reason: 'damaged' } };
+    if (meta.mode === 'open') return { fail: { ok: false, reason: 'format' } };
     const wait = await this.lockout.waitMs();
     if (wait > 0) return { fail: { ok: false, reason: 'locked', waitMs: wait } };
     if (!PIN_PATTERN.test(pin)) return { fail: { ok: false, reason: 'format' } };

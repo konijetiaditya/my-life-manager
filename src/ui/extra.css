@@ -7,3 +7,4 @@
 @keyframes sp{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.spin{animation-duration:2.4s}}
 .lockbox .mf{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+body.open-mode [data-a="lockNow"]{display:none!important}

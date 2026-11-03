@@ -6,6 +6,7 @@ import { parseState } from '../security/schema';
 import { repairCollections } from '../security/repair';
 import { createBackup, readBackup, checkBackupPassword, BackupError } from '../security/backup';
 import { pinWeakness } from '../security/pinPolicy';
+import { argon2 } from '../security/crypto';
 import { biometricAvailable, confirmBiometric } from '../platform/biometric';
 import { watchLifecycle, minimizeApp } from '../platform/lifecycle';
 import { notificationPermission, replaceScheduled, cancelAllScheduled, sendTest } from '../platform/notify';
@@ -14,6 +15,9 @@ import { isNative } from '../platform/env';
 
 const vault=new Vault(getSecretStore());
 const ENV={bio:false};
+// App lock is OFF in normal builds (the app opens straight away). A build with VITE_APP_LOCK=on keeps the PIN lock.
+const LOCK_ON=import.meta.env.VITE_APP_LOCK==='on';
+let OPEN=false;
 const $=(s,el=document)=>el.querySelector(s), $$=(s,el=document)=>Array.from(el.querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>{const a=new Uint8Array(6);crypto.getRandomValues(a);return Array.from(a,b=>b.toString(36).padStart(2,'0')).join('').slice(0,10)};
@@ -484,11 +488,11 @@ PAGES.prefs=()=>{const s=S.settings;
   <section class="card"><h2>General</h2>
     <div class="srow"><div><div class="t1">Your name</div><div class="t2">Used in the welcome message.</div></div><div style="width:150px"><input id="setName" value="${esc(s.name)}" maxlength="30" aria-label="Your name" data-sel="name"></div></div>
     <div class="srow"><div><div class="t1">Currency</div><div class="t2">Changes the symbol only. No conversion is done.</div></div><div style="width:150px"><select data-sel="cur" aria-label="Currency">${Object.keys(CUR).map(c=>`<option${c===s.currency?' selected':''}>${c}</option>`).join('')}</select></div></div></section>
-  <section class="card"><h2>App lock</h2>
+  ${OPEN?`<section class="card"><h2>App lock</h2><p class="muted" style="margin-top:6px">App lock is <b>off</b>: the app opens straight away. Your data is still encrypted on this phone with a key held by Android, but anyone who can open your unlocked phone can open this app. Use your phone’s own screen lock to protect it.</p></section>`:`<section class="card"><h2>App lock</h2>
     <div class="srow"><div><div class="t1">Fingerprint unlock</div><div class="t2">${ENV.bio||s.bio?'Uses your phone’s strong biometrics. Your PIN always works too.':'Not available. Set up a fingerprint on your phone first.'}</div></div>${ENV.bio||s.bio?sw('bio',s.bio,'toggleBio'):pill('','Unavailable')}</div>
     <div class="srow"><div><div class="t1">Lock when I leave the app</div><div class="t2">Applies when you switch to another app.</div></div><div style="width:150px"><select data-sel="leave" aria-label="Lock when leaving">${selOpts([[0,'Immediately'],[60,'After 1 minute'],[300,'After 5 minutes']],s.leaveLock)}</select></div></div>
     <div class="srow"><div><div class="t1">Auto-lock after</div><div class="t2">Inactivity while the app is open.</div></div><div style="width:150px"><select data-sel="auto" aria-label="Auto-lock">${selOpts([[1,'1 minute'],[5,'5 minutes'],[15,'15 minutes'],[0,'Never']],s.autoLock)}</select></div></div>
-    <div class="srow"><div><div class="t1">PIN</div><div class="t2">Wrong attempts add waits: 30 seconds after 3, rising to 15 minutes.</div></div><button class="btn sm sec" data-a="chgPin">Change PIN</button></div></section>
+    <div class="srow"><div><div class="t1">PIN</div><div class="t2">Wrong attempts add waits: 30 seconds after 3, rising to 15 minutes.</div></div><button class="btn sm sec" data-a="chgPin">Change PIN</button></div></section>`}
   <section class="card"><h2>Notifications</h2>
     <div class="srow"><div><div class="t1">Reminders on this phone</div><div class="t2">Needs notification permission. Timing can be a few minutes off.</div></div>${sw('notif',s.notif,'toggleNotif')}</div>
     <div class="srow"><div><div class="t1">Hide details on lock screen</div><div class="t2">Shows “A payment is due soon” instead of names and amounts.</div></div>${sw('hideNotif',s.hideNotif)}</div>
@@ -498,7 +502,7 @@ PAGES.prefs=()=>{const s=S.settings;
     <div class="srow"><div><div class="t1">Check that it works</div><div class="t2">Sends a test reminder in about 5 seconds.</div></div><button class="btn sm sec" data-a="testNotif">Send test</button></div></section>
   <section class="card"><h2>Privacy and protection</h2>
     <div class="kv" style="margin-top:8px"><div class="full"><div class="l">Where your data lives</div><div class="v" style="font-weight:500">On this phone only. No account, no ads, no analytics, nothing uploaded.</div></div>
-    <div><div class="l">Encryption</div><div class="v">AES-256-GCM</div></div><div><div class="l">Key protection</div><div class="v">${vault.keysAreHardwareBacked?pill('ok','PIN + Android Keystore'):pill('warn','PIN only (browser test)')}</div></div>
+    <div><div class="l">Encryption</div><div class="v">AES-256-GCM</div></div><div><div class="l">Key protection</div><div class="v">${vault.keysAreHardwareBacked?pill('ok',OPEN?'Android Keystore':'PIN + Android Keystore'):pill('warn',OPEN?'App storage only':'PIN only (browser test)')}</div></div>
     <div><div class="l">Screenshots</div><div class="v">${isNative()?pill('ok','Blocked'):pill('','Android app only')}</div></div><div><div class="l">Cloud sync</div><div class="v">${pill('','Off')}</div></div></div></section>
   <section class="card span2"><h2>Backup, restore and deletion</h2>
     <p class="muted" style="margin:6px 0 12px">Nothing is copied anywhere unless you export it. A backup is a single file encrypted with a password you choose. Keep it somewhere safe, such as your email drafts or a cloud drive. Without the password it cannot be opened.</p>
@@ -655,11 +659,12 @@ async function enterApp(){
   if(txt===null)st=emptyState('');
   else{let p;try{p=parseState(txt)}catch(e){throw new VaultDamagedError()}st=adopt(p).state}
   st.settings.bio=await vault.biometricEnabled();
+  OPEN=await vault.isOpenMode();
   S=st;showApp()}
-function showApp(){if(padCtl)padCtl.close();const el=$('#lock');el.hidden=true;el.innerHTML='';refreshToday();lastActive=Date.now();bgAt=0;render();syncNotifs()}
+function showApp(){document.body.classList.toggle('open-mode',OPEN);if(padCtl)padCtl.close();const el=$('#lock');el.hidden=true;el.innerHTML='';refreshToday();lastActive=Date.now();bgAt=0;render();syncNotifs()}
 function showDamaged(){hideApp();const el=$('#lock');el.hidden=false;
   el.innerHTML=`<div class="lockbox">${logo(56)}<h1>Your data cannot be read</h1><p class="muted">The stored data is damaged or was changed. Nothing has been sent anywhere. If you have an encrypted backup you can erase and restore it.</p><div class="mf" style="justify-content:center"><button class="btn sec" id="dTry">Try again</button><button class="btn danger" id="dErase">Erase and start over</button></div></div>`;
-  $('#dTry').onclick=()=>showUnlock();$('#dErase').onclick=()=>eraseScreen(()=>showDamaged(),'This deletes the damaged data from this phone.')}
+  $('#dTry').onclick=()=>boot();$('#dErase').onclick=()=>eraseScreen(()=>showDamaged(),'This deletes the damaged data from this phone.')}
 function eraseScreen(back,why){const el=$('#lock');el.hidden=false;
   el.innerHTML=`<div class="lockbox">${logo(56)}<h1>Erase everything?</h1><p class="muted" id="ewhy"></p><div class="fld" style="text-align:left;margin-top:12px;width:100%"><label for="etype">Type <b>ERASE</b> to continue</label><input id="etype" autocomplete="off"></div><div class="mf" style="justify-content:center"><button class="btn sec" id="eback">Go back</button><button class="btn danger" id="eyes" disabled>Erase all data</button></div></div>`;
   $('#ewhy').textContent=why;$('#eback').onclick=()=>{el.innerHTML='';back()};
@@ -673,31 +678,58 @@ function showOnboarding(){hideApp();const el=$('#lock');el.hidden=false;
   el.innerHTML=`<div class="lockbox">${logo(64)}<h1>My Life Manager</h1><p class="muted">Your bills, insurance, investments, gold, silver and documents in one private place. Everything stays on this phone, encrypted. No account, no ads, no tracking.</p>
     <div class="fld" style="text-align:left;margin-top:16px;width:100%"><label for="obName">What should we call you?</label><input id="obName" maxlength="30" autocomplete="off"><div class="err" id="obErr" role="alert"></div></div>
     <div class="mf" style="justify-content:center"><button class="btn" id="obGo">Continue</button></div>
-    <p class="small muted" style="margin-top:12px">Next you choose a 4-digit PIN. It cannot be recovered if you forget it, so make an encrypted backup once you have added data.</p></div>`;
-  const go=()=>{const n=$('#obName').value.trim().slice(0,30);if(!n){$('#obErr').textContent='Please enter a name.';$('#obName').parentElement.classList.add('bad');return}choosePin(n)};
+    <p class="small muted" style="margin-top:12px">${LOCK_ON?'Next you choose a 4-digit PIN. It cannot be recovered if you forget it, so make an encrypted backup once you have added data.':'The app opens straight away, with no PIN. Your data is still encrypted on this phone. Make an encrypted backup once you have added data.'}</p></div>`;
+  const go=()=>{const n=$('#obName').value.trim().slice(0,30);if(!n){$('#obErr').textContent='Please enter a name.';$('#obName').parentElement.classList.add('bad');return}(LOCK_ON?choosePin:startOpen)(n)};
   $('#obGo').onclick=go;$('#obName').addEventListener('keydown',e=>{if(e.key==='Enter')go()})}
+const withTimeout=(p,ms,label)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error(label+' timed out')),ms))]);
+async function selfTest(){const out=[];
+  const run=async(name,fn)=>{try{await withTimeout(fn(),15000,name);out.push(name+': ok')}catch(e){out.push(name+': FAILED - '+((e&&e.message)||e))}};
+  await run('Crypto API',async()=>{if(!crypto||!crypto.subtle)throw new Error('missing');await crypto.subtle.digest('SHA-256',new Uint8Array(4))});
+  await run('Argon2 (WebAssembly)',async()=>{await argon2('1234',new Uint8Array(16),{m:64,t:1,p:1})});
+  await run('Argon2 (real size)',async()=>{await argon2('1234',new Uint8Array(16),{m:19456,t:2,p:1})});
+  await run('Secure key store',async()=>{const st=getSecretStore();await st.set('mlm.selftest','1');if(await st.get('mlm.selftest')!=='1')throw new Error('read back differs');await st.remove('mlm.selftest')});
+  await run('Database',async()=>{await vault.exists()});
+  return out.join('\n')}
+function setupProblem(err,report,name){hideApp();const el=$('#lock');el.hidden=false;
+  el.innerHTML=`<div class="lockbox" style="max-width:420px">${logo(56)}<h1>Setup problem</h1><p class="muted">The app could not finish securing your vault on this phone. Nothing was saved. Please send a screenshot of this screen.</p><pre id="spr" style="text-align:left;white-space:pre-wrap;font-size:12px;background:var(--surf);padding:10px;border-radius:10px;width:100%"></pre><div class="mf" style="justify-content:center"><button class="btn" id="spRetry">Try again</button></div></div>`;
+  $('#spr').textContent='Error: '+err+'\n\n'+report;
+  $('#spRetry').onclick=async()=>{busy('Cleaning up…');try{await withTimeout(vault.wipe(),10000,'Cleanup')}catch(e){}busy(false);el.innerHTML='';(LOCK_ON?choosePin:startOpen)(name)}}
 function choosePin(name){newPinFlow({title:'Create your PIN',cancel:false,onDone:async(pin,c)=>{
   c.msg('Securing your vault…');await new Promise(r=>setTimeout(r,40));
-  try{await vault.create(pin);S=emptyState(name);await vault.save(JSON.stringify(S))}catch(e){c.msg('Could not set up secure storage on this device.',true);return}
+  try{await withTimeout(vault.create(pin),45000,'Creating the vault');S=emptyState(name);await withTimeout(vault.save(JSON.stringify(S)),15000,'Saving your data')}
+  catch(e){const msg=(e&&e.message)||String(e);c.msg('Checking what went wrong…',true);const rep=await selfTest();c.close();setupProblem(msg,rep,name);return}
   c.close();await onboardExtras(pin)}})}
+async function startOpen(name){
+  busy('Setting up…');await new Promise(r=>setTimeout(r,40));
+  try{try{await withTimeout(vault.wipe(),10000,'Cleanup')}catch(e){}
+    await withTimeout(vault.createOpen(),30000,'Creating the vault');S=emptyState(name);OPEN=true;await withTimeout(vault.save(JSON.stringify(S)),15000,'Saving your data')}
+  catch(e){const msg=(e&&e.message)||String(e);busy('Checking what went wrong…');const rep=await selfTest();busy(false);setupProblem(msg,rep,name);return}
+  busy(false);await onboardExtras(null)}
+async function boot(){
+  try{if(!(await vault.exists())){showOnboarding();return}
+    if(await vault.isOpenMode()){busy('Opening…');let r;try{r=await withTimeout(vault.unlockOpen(),20000,'Opening')}finally{busy(false)}
+      if(!r.ok){showDamaged();return}
+      try{await enterApp()}catch(e){if(e instanceof VaultDamagedError)showDamaged();else throw e}}
+    else await showUnlock()}
+  catch(e){const el=$('#lock');el.hidden=false;el.innerHTML='<div class="lockbox"><h1>Storage is not available</h1><p class="muted">The app could not open its private storage on this device. Close the app and try again.</p></div>'}}
 async function onboardExtras(pin){
-  if(ENV.bio&&await ask({title:'Unlock with fingerprint?',text:'You can unlock with your fingerprint instead of typing the PIN. Your PIN still works.',yes:'Turn on',no:'Not now'})){
+  if(pin&&ENV.bio&&await ask({title:'Unlock with fingerprint?',text:'You can unlock with your fingerprint instead of typing the PIN. Your PIN still works.',yes:'Turn on',no:'Not now'})){
     if(await confirmBiometric('Turn on fingerprint unlock')){const r=await vault.enableBiometric(pin);if(r.ok)S.settings.bio=true}}
   if(isNative()&&await ask({title:'Get reminders?',text:'Allow notifications so your phone can remind you about bills, renewals and expiring documents. They are created on this phone only.',yes:'Allow',no:'Not now'})){
     if(await notificationPermission(true)==='granted')S.settings.notif=true}
   persist();await saveChain;showApp();toast('Welcome, '+S.settings.name)}
-function reauth(cb,opt){opt=opt||{};const bioOk=S.settings.bio&&!opt.pinOnly&&ENV.bio;
+function reauth(cb,opt){opt=opt||{};if(OPEN){Promise.resolve().then(()=>cb()).catch(()=>toast('Something went wrong.'));return}const bioOk=S.settings.bio&&!opt.pinOnly&&ENV.bio;
   const run=pin=>{Promise.resolve().then(()=>cb(pin)).catch(()=>toast('Something went wrong.'))};
   pinPad({cancel:true,title:'Confirm it’s you',sub:'This action needs your PIN.',bio:bioOk,
     onPin:async(pin,c)=>{const r=await vault.verifyPin(pin);if(r.ok){c.close();run(pin)}else failMsg(r,c)},
     onBio:async c=>{if(await confirmBiometric('Confirm it is you')){c.close();run()}else c.msg('Fingerprint not recognised.',true)}})}
 async function lockNow(){
-  if(!S||locking)return;locking=true;
+  if(!S||locking||OPEN)return;locking=true;
   try{closeModal();closeModal(2);const pend=saveChain;if(notifTimer){clearTimeout(notifTimer);notifTimer=null;syncNotifs()}
     hideApp();S=null;await pend.catch(()=>{})}finally{vault.lock();locking=false}
   showUnlock()}
-function onBackground(){if(!S)return;bgAt=Date.now();bgGrace=Date.now()<graceUntil;if(S.settings.leaveLock===0&&!bgGrace)lockNow()}
-function onForeground(){if(!S)return;refreshToday();
+function onBackground(){if(!S||OPEN)return;bgAt=Date.now();bgGrace=Date.now()<graceUntil;if(S.settings.leaveLock===0&&!bgGrace)lockNow()}
+function onForeground(){if(!S)return;refreshToday();if(OPEN){render(true);return}
   if(!bgGrace&&bgAt&&S.settings.leaveLock>0&&Date.now()-bgAt>=S.settings.leaveLock*1000){lockNow();return}
   if(S.settings.autoLock>0&&Date.now()-lastActive>S.settings.autoLock*60000){lockNow();return}
   bgAt=0;render(true)}
@@ -788,8 +820,8 @@ const A={
   wipe:()=>reauth(()=>confirmBox({title:'Delete all data?',text:'Every record, attached file and setting on this phone will be erased, including the encryption keys. Create a backup first if you may need it.',typed:'DELETE',yes:'Delete everything',danger:true,onYes:async()=>{
     busy('Deleting…');try{await cancelAllScheduled().catch(()=>{});await vault.wipe()}finally{busy(false)}S=null;closeModal();closeModal(2);hideApp();showOnboarding()}}),{pinOnly:true}),
   about:()=>openModal(head('About and privacy')+`<div class="kv"><div class="full"><div class="l">What is stored</div><div class="v" style="font-weight:500">Only what you type and attach, encrypted on this phone. Nothing is uploaded and the app has no internet permission.</div></div>
-    <div class="full"><div class="l">How it is protected</div><div class="v" style="font-weight:500">Your PIN (hardened with Argon2id) and a secret kept in the Android Keystore unlock a key that encrypts your data and files with AES-256-GCM. Wrong PINs cause growing waits.</div></div>
-    <div class="full"><div class="l">Honest limits</div><div class="v" style="font-weight:500">A 4-digit PIN is a small space, and no app can promise to be unhackable. A rooted or compromised phone, or someone who knows your PIN, can still get in. Keep your phone updated and use a screen lock.</div></div></div><div class="mf"><button class="btn" data-a="close">Close</button></div>`),
+    <div class="full"><div class="l">How it is protected</div><div class="v" style="font-weight:500">${OPEN?'A random key encrypts your data and files with AES-256-GCM. The key is protected by a secret kept by Android (the Keystore, when the phone allows it). There is no PIN, so the phone’s own screen lock is your protection.':'Your PIN (hardened with Argon2id) and a secret kept in the Android Keystore unlock a key that encrypts your data and files with AES-256-GCM. Wrong PINs cause growing waits.'}</div></div>
+    <div class="full"><div class="l">Honest limits</div><div class="v" style="font-weight:500">${OPEN?'With the app lock off, anyone holding your unlocked phone can open this app, and no app can promise to be unhackable.':'A 4-digit PIN is a small space, and no app can promise to be unhackable.'} A rooted or compromised phone, or someone who knows your PIN, can still get in. Keep your phone updated and use a screen lock.</div></div></div><div class="mf"><button class="btn" data-a="close">Close</button></div>`),
   viewFile:d=>viewFile(d.id,d.n),
   openDoc:d=>{const x=find('docs',d.id);if(x)viewFile(x.file_id,x.file)},
 };
@@ -814,7 +846,7 @@ export async function start(){
   document.addEventListener('click',e=>{if(e.target.matches&&e.target.matches('input[type=file]'))graceUntil=Date.now()+90000},true);
   try{ENV.bio=await biometricAvailable();
     await watchLifecycle({onBackground,onForeground,onBack});
-    if(await vault.exists())await showUnlock();else showOnboarding()}
+    await boot()}
   catch(e){const el=$('#lock');el.hidden=false;el.innerHTML='<div class="lockbox"><h1>Storage is not available</h1><p class="muted">The app could not open its private storage on this device. Close the app and try again.</p></div>'}}
 if(import.meta.env.MODE==='test'){window.__mlm={state:()=>S&&JSON.parse(JSON.stringify(S)),
   inject:o=>{if(!S)throw new Error('locked');const a=adopt(parseState(JSON.stringify(o)));S=a.state;persist();render()},
